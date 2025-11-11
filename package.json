@@ -1,0 +1,24 @@
+{
+  "name": "jurnal-siswa",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A comprehensive student journaling application.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "recharts": "^3.3.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/react": "^18.0.0",
+    "@types/react-dom": "^18.0.0",
+    "typescript": "^5.0.0",
+    "vite": "^5.3.5",
+    "@vitejs/plugin-react": "^4.3.1"
+  }
+}
