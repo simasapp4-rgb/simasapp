@@ -1,8 +1,10 @@
+
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { User } from '../src/types';
-import { USERS, INITIAL_JOURNAL_ENTRIES } from '../src/constants';
+import { INITIAL_USERS } from '../src/constants';
 
+// Inisialisasi klien Supabase
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
 
@@ -16,36 +18,31 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   switch (req.method) {
     case 'GET':
       try {
-        // PRODUCTION-READY STRATEGY: Seed data only if the table is empty.
-        // 1. Check if there's any data in the table.
+        // Cek apakah tabel pengguna kosong
         const { count, error: countError } = await supabase
             .from('users')
             .select('*', { count: 'exact', head: true });
 
         if (countError) throw countError;
 
-        // 2. If the table is empty, seed it with initial data.
+        // Jika kosong, isi dengan data awal
         if (count === 0) {
             const { error: insertError } = await supabase
                 .from('users')
-                .insert(USERS);
-            
-            if (insertError) {
-                console.error("Error seeding users table:", insertError);
-                throw insertError;
-            }
+                .insert(INITIAL_USERS);
+            if (insertError) throw insertError;
         }
         
-        // 3. Fetch and return all user entries.
+        // Ambil semua data pengguna
         const { data: users, error: fetchError } = await supabase
             .from('users')
             .select('*')
             .order('name', { ascending: true });
 
         if (fetchError) throw fetchError;
-
-        res.status(200).json(users);
-
+        
+        return res.status(200).json(users);
+        
       } catch (error: any) {
         res.status(500).json({ message: 'Error fetching users', error: error.message });
       }
@@ -54,20 +51,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     case 'POST':
       try {
         const newUser: User = req.body;
-        
         const { data, error } = await supabase
           .from('users')
           .insert(newUser)
           .select()
           .single();
 
-        if (error) {
-            console.error('Supabase insert error:', error);
-            return res.status(400).json({ message: error.message });
-        }
+        if (error) throw error;
         res.status(201).json(data);
       } catch (error: any) {
-        res.status(400).json({ message: 'Bad request: Invalid user data.', error: error.message });
+        res.status(400).json({ message: 'Bad request', error: error.message });
       }
       break;
     
@@ -87,42 +80,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .select()
           .single();
 
-        if (error) {
-            console.error('Supabase update error:', error);
-            return res.status(400).json({ message: error.message });
-        }
+        if (error) throw error;
         if (!data) return res.status(404).json({ message: 'User not found' });
         
         res.status(200).json(data);
       } catch (error: any) {
-         res.status(400).json({ message: 'Bad request: Invalid user data.', error: error.message });
+         res.status(400).json({ message: 'Bad request', error: error.message });
       }
       break;
 
     case 'DELETE':
       try {
-        const { id, action } = req.query;
-
-        // Handle Application Data Reset
-        if (action === 'reset_application_data') {
-            // 1. Delete all existing data from journals and users table
-            const { error: journalDeleteError } = await supabase.from('journals').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-            if (journalDeleteError) throw new Error(`Failed to clear journals: ${journalDeleteError.message}`);
-            
-            const { error: userDeleteError } = await supabase.from('users').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-            if (userDeleteError) throw new Error(`Failed to clear users: ${userDeleteError.message}`);
-
-            // 2. Re-seed the tables with initial data
-            const { error: journalSeedError } = await supabase.from('journals').insert(INITIAL_JOURNAL_ENTRIES);
-            if (journalSeedError) throw new Error(`Failed to seed journals: ${journalSeedError.message}`);
-
-            const { error: userSeedError } = await supabase.from('users').insert(USERS);
-            if (userSeedError) throw new Error(`Failed to seed users: ${userSeedError.message}`);
-            
-            return res.status(200).json({ message: 'Application data has been reset successfully.' });
+        // Handle reset data khusus
+        if (req.query.action === 'reset_application_data') {
+            await supabase.from('journals').delete().neq('id', '0'); // Hapus semua kecuali dummy
+            await supabase.from('users').delete().neq('id', '0');
+            await supabase.from('users').insert(INITIAL_USERS);
+            return res.status(200).json({ message: 'Application data has been reset.' });
         }
-        
-        // Handle single user deletion
+          
+        const { id } = req.query;
         if (typeof id !== 'string') {
           return res.status(400).json({ message: 'Bad request: Missing or invalid id.' });
         }
@@ -132,13 +109,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .delete()
           .eq('id', id);
 
-        if (error) {
-            console.error('Supabase delete error:', error);
-            return res.status(500).json({ message: error.message });
-        }
+        if (error) throw error;
         res.status(200).json({ message: 'User deleted successfully' });
       } catch(error: any) {
-        res.status(500).json({ message: 'Error during DELETE operation', error: error.message });
+        res.status(500).json({ message: 'Error deleting user', error: error.message });
       }
       break;
 
