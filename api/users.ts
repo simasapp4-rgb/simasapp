@@ -10,14 +10,7 @@ if (!supabaseUrl || !supabaseKey) {
   throw new Error("Supabase URL and Key must be defined in environment variables.");
 }
 
-// Definitive fix for caching: Force all Supabase requests to bypass cache
-const supabase = createClient(supabaseUrl, supabaseKey, {
-  global: {
-    headers: {
-      'Cache-Control': 'no-store',
-    },
-  },
-});
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 const setNoCacheHeaders = (res: VercelResponse) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
@@ -32,23 +25,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   switch (req.method) {
     case 'GET':
       try {
-        const { count, error: countError } = await supabase
-            .from('users')
-            .select('*', { count: 'exact', head: true });
-
-        if (countError) throw countError;
-
-        if (count === 0) {
-            const { error: insertError } = await supabase
-                .from('users')
-                .insert(INITIAL_USERS);
-            
-            if (insertError) {
-                console.error("Error seeding users table:", insertError);
-                throw insertError;
-            }
-        }
-        
+        // AMANKAN: Hapus logika seeding otomatis yang berbahaya.
+        // Database adalah satu-satunya sumber kebenaran.
         const { data: users, error: fetchError } = await supabase
             .from('users')
             .select('*')
@@ -56,7 +34,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         if (fetchError) throw fetchError;
         
-        return res.status(200).json(users);
+        // Jika tidak ada pengguna sama sekali (misalnya, database baru), kembalikan array kosong.
+        // Pengguna admin pertama harus dibuat secara manual di Supabase.
+        return res.status(200).json(users ?? []);
         
       } catch (error: any) {
         console.error('Error in GET /api/users:', error);
@@ -116,6 +96,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           await supabaseAdmin.from('journals').delete().neq('id', '0');
           await supabaseAdmin.from('users').delete().neq('id', '0');
           
+          // AMANKAN: Setelah reset, kita HARUS memasukkan kembali data awal secara eksplisit.
+          await supabaseAdmin.from('users').insert(INITIAL_USERS);
+          // (Kita juga perlu menambahkan ini untuk jurnal nanti)
+
           return res.status(200).json({ message: 'All application data has been reset.' });
         } catch(error: any) {
           return res.status(500).json({ message: 'Error resetting data', error: error.message });
