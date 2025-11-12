@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { User, UserRole, JournalEntry } from './types';
 import { INITIAL_JOURNAL_CATEGORIES } from './constants';
 import { loadState, saveState } from './utils/storage';
@@ -23,11 +23,14 @@ const App: React.FC = () => {
   const [attendanceSettings, setAttendanceSettings] = useState({ startTime: '07:00', endTime: '09:00' });
   const [schoolName, setSchoolName] = useState('SMP NEGERI 4 BALIKPAPAN');
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  
+  // Use a ref to track if it's the initial load, preventing stale closures in useCallback
+  const isInitialLoad = useRef(true);
 
   const fetchData = useCallback(async () => {
-    // Set loading to true only for the initial load
-    if (users.length === 0) {
-        setIsLoading(true);
+    // Only show the full splash screen on the very first load.
+    if (isInitialLoad.current) {
+      setIsLoading(true);
     }
     setError(null);
     try {
@@ -47,18 +50,25 @@ const App: React.FC = () => {
       setUsers(usersData);
       setJournalEntries(journalsData);
 
-      setJournalCategories(loadState('journalCategories', INITIAL_JOURNAL_CATEGORIES));
-      setAttendanceSettings(loadState('attendanceSettings', { startTime: '07:00', endTime: '09:00' }));
-      setSchoolName(loadState('schoolName', 'SMP NEGERI 4 BALIKPAPAN'));
-      setTheme(loadState('theme', 'light'));
+      // Load settings from localStorage after main data is loaded
+      if (isInitialLoad.current) {
+        setJournalCategories(loadState('journalCategories', INITIAL_JOURNAL_CATEGORIES));
+        setAttendanceSettings(loadState('attendanceSettings', { startTime: '07:00', endTime: '09:00' }));
+        setSchoolName(loadState('schoolName', 'SMP NEGERI 4 BALIKPAPAN'));
+        setTheme(loadState('theme', 'light'));
+      }
 
     } catch (e: any) {
       console.error("Gagal mengambil data dari API:", e);
       setError("Gagal terhubung ke server. Silakan coba lagi nanti.");
     } finally {
-      setIsLoading(false);
+      // Ensure loading is set to false after the first load is complete
+      if (isInitialLoad.current) {
+        setIsLoading(false);
+        isInitialLoad.current = false;
+      }
     }
-  }, [users.length]); // Re-create fetchData if users length changes
+  }, []); // Empty dependency array makes this function stable
 
   // Initial data fetch
   useEffect(() => {
@@ -73,19 +83,17 @@ const App: React.FC = () => {
         fetchData();
       }
     };
-
     document.addEventListener("visibilitychange", handleVisibilityChange);
-
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [fetchData]);
   
   // Save settings to localStorage
-  useEffect(() => { if (!isLoading) saveState('journalCategories', journalCategories); }, [journalCategories, isLoading]);
-  useEffect(() => { if (!isLoading) saveState('attendanceSettings', attendanceSettings); }, [attendanceSettings, isLoading]);
-  useEffect(() => { if (!isLoading) saveState('schoolName', schoolName); }, [schoolName, isLoading]);
-  useEffect(() => { if (!isLoading) saveState('theme', theme); }, [theme, isLoading]);
+  useEffect(() => { if (!isInitialLoad.current) saveState('journalCategories', journalCategories); }, [journalCategories]);
+  useEffect(() => { if (!isInitialLoad.current) saveState('attendanceSettings', attendanceSettings); }, [attendanceSettings]);
+  useEffect(() => { if (!isInitialLoad.current) saveState('schoolName', schoolName); }, [schoolName]);
+  useEffect(() => { if (!isInitialLoad.current) saveState('theme', theme); }, [theme]);
 
 
   useEffect(() => {
@@ -104,7 +112,6 @@ const App: React.FC = () => {
           setCurrentUser(updatedUser);
         }
       } else {
-        // User was deleted, log them out
         setCurrentUser(null);
       }
     }
@@ -125,8 +132,6 @@ const App: React.FC = () => {
     setCurrentUser(null);
   };
 
-  // All the handle... functions now refetch data after a successful operation to ensure consistency.
-
   const handleAddJournal = async (newJournalData: Partial<JournalEntry>) => {
     const response = await fetch('/api/journals', {
       method: 'POST',
@@ -134,7 +139,7 @@ const App: React.FC = () => {
       body: JSON.stringify(newJournalData),
     });
     if (!response.ok) throw new Error("Gagal menambahkan jurnal.");
-    await fetchData(); // Refetch
+    await fetchData(); 
   };
 
   const handleUpdateJournal = async (updatedJournal: JournalEntry) => {
@@ -144,13 +149,13 @@ const App: React.FC = () => {
       body: JSON.stringify(updatedJournal),
     });
     if (!response.ok) throw new Error("Gagal memperbarui jurnal.");
-    await fetchData(); // Refetch
+    await fetchData();
   };
 
   const handleDeleteJournal = async (journalId: string) => {
     const response = await fetch(`/api/journals?id=${journalId}`, { method: 'DELETE' });
     if (!response.ok) throw new Error("Gagal menghapus jurnal.");
-    await fetchData(); // Refetch
+    await fetchData();
   };
 
   const handleAddUser = async (newUser: User) => {
@@ -160,7 +165,7 @@ const App: React.FC = () => {
       body: JSON.stringify(newUser),
     });
     if (!response.ok) throw new Error("Gagal menambahkan pengguna.");
-    await fetchData(); // Refetch
+    await fetchData();
   };
 
   const handleUpdateUser = async (updatedUser: User) => {
@@ -170,19 +175,19 @@ const App: React.FC = () => {
       body: JSON.stringify(updatedUser),
     });
     if (!response.ok) throw new Error("Gagal memperbarui pengguna.");
-    await fetchData(); // Refetch
+    await fetchData();
   };
 
   const handleDeleteUser = async (userId: string) => {
      const response = await fetch(`/api/users?id=${userId}`, { method: 'DELETE' });
     if (!response.ok) throw new Error("Gagal menghapus pengguna.");
-    await fetchData(); // Refetch
+    await fetchData();
   };
   
   const handleResetData = useCallback(async () => {
     const response = await fetch('/api/users?action=reset_application_data', { method: 'DELETE' });
     if (!response.ok) throw new Error("Gagal mereset data aplikasi.");
-    await fetchData(); // Refetch
+    await fetchData();
   }, [fetchData]);
 
   const DashboardComponent = useMemo(() => {
