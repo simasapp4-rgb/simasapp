@@ -25,7 +25,10 @@ const App: React.FC = () => {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
   const fetchData = useCallback(async () => {
-    setIsLoading(true);
+    // Set loading to true only for the initial load
+    if (users.length === 0) {
+        setIsLoading(true);
+    }
     setError(null);
     try {
       const cacheBuster = `?t=${new Date().getTime()}`;
@@ -44,7 +47,6 @@ const App: React.FC = () => {
       setUsers(usersData);
       setJournalEntries(journalsData);
 
-      // Load settings from localStorage after main data is loaded
       setJournalCategories(loadState('journalCategories', INITIAL_JOURNAL_CATEGORIES));
       setAttendanceSettings(loadState('attendanceSettings', { startTime: '07:00', endTime: '09:00' }));
       setSchoolName(loadState('schoolName', 'SMP NEGERI 4 BALIKPAPAN'));
@@ -56,10 +58,27 @@ const App: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [users.length]); // Re-create fetchData if users length changes
 
+  // Initial data fetch
   useEffect(() => {
     fetchData();
+  }, [fetchData]);
+
+  // Add event listener to refetch data when app becomes visible again
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log("App became visible, refetching data...");
+        fetchData();
+      }
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [fetchData]);
   
   // Save settings to localStorage
@@ -85,6 +104,7 @@ const App: React.FC = () => {
           setCurrentUser(updatedUser);
         }
       } else {
+        // User was deleted, log them out
         setCurrentUser(null);
       }
     }
@@ -105,6 +125,8 @@ const App: React.FC = () => {
     setCurrentUser(null);
   };
 
+  // All the handle... functions now refetch data after a successful operation to ensure consistency.
+
   const handleAddJournal = async (newJournalData: Partial<JournalEntry>) => {
     const response = await fetch('/api/journals', {
       method: 'POST',
@@ -112,8 +134,7 @@ const App: React.FC = () => {
       body: JSON.stringify(newJournalData),
     });
     if (!response.ok) throw new Error("Gagal menambahkan jurnal.");
-    const newJournal = await response.json();
-    setJournalEntries(prev => [newJournal, ...prev]);
+    await fetchData(); // Refetch
   };
 
   const handleUpdateJournal = async (updatedJournal: JournalEntry) => {
@@ -123,14 +144,13 @@ const App: React.FC = () => {
       body: JSON.stringify(updatedJournal),
     });
     if (!response.ok) throw new Error("Gagal memperbarui jurnal.");
-    const returnedJournal = await response.json();
-    setJournalEntries(prev => prev.map(j => j.id === returnedJournal.id ? returnedJournal : j));
+    await fetchData(); // Refetch
   };
 
   const handleDeleteJournal = async (journalId: string) => {
     const response = await fetch(`/api/journals?id=${journalId}`, { method: 'DELETE' });
     if (!response.ok) throw new Error("Gagal menghapus jurnal.");
-    setJournalEntries(prev => prev.filter(j => j.id !== journalId));
+    await fetchData(); // Refetch
   };
 
   const handleAddUser = async (newUser: User) => {
@@ -140,8 +160,7 @@ const App: React.FC = () => {
       body: JSON.stringify(newUser),
     });
     if (!response.ok) throw new Error("Gagal menambahkan pengguna.");
-    const addedUser = await response.json();
-    setUsers(prev => [addedUser, ...prev].sort((a,b) => a.name.localeCompare(b.name)));
+    await fetchData(); // Refetch
   };
 
   const handleUpdateUser = async (updatedUser: User) => {
@@ -151,21 +170,19 @@ const App: React.FC = () => {
       body: JSON.stringify(updatedUser),
     });
     if (!response.ok) throw new Error("Gagal memperbarui pengguna.");
-    const returnedUser = await response.json();
-    setUsers(prev => prev.map(u => u.id === returnedUser.id ? returnedUser : u));
+    await fetchData(); // Refetch
   };
 
   const handleDeleteUser = async (userId: string) => {
      const response = await fetch(`/api/users?id=${userId}`, { method: 'DELETE' });
     if (!response.ok) throw new Error("Gagal menghapus pengguna.");
-    setUsers(prev => prev.filter(u => u.id !== userId));
+    await fetchData(); // Refetch
   };
   
   const handleResetData = useCallback(async () => {
     const response = await fetch('/api/users?action=reset_application_data', { method: 'DELETE' });
     if (!response.ok) throw new Error("Gagal mereset data aplikasi.");
-    // Force a full reload to get fresh data
-    fetchData();
+    await fetchData(); // Refetch
   }, [fetchData]);
 
   const DashboardComponent = useMemo(() => {
