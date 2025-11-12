@@ -9,10 +9,18 @@ if (!supabaseUrl || !supabaseKey) {
   throw new Error("Supabase URL and Key must be defined in environment variables.");
 }
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+// Definitive fix for caching: Force all Supabase requests to bypass cache
+const supabase = createClient(supabaseUrl, supabaseKey, {
+  global: {
+    headers: {
+      'Cache-Control': 'no-store',
+    },
+  },
+});
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  res.setHeader('Cache-Control', 'no-cache');
+  // This header is still good practice for browser-side caching.
+  res.setHeader('Cache-Control', 'no-store');
 
   switch (req.method) {
     case 'GET':

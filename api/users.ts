@@ -1,7 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { User } from '../src/types';
-// Corrected import: Renamed 'USERS' to 'INITIAL_USERS' and added the '.js' extension.
 import { USERS as INITIAL_USERS } from '../src/constants.js';
 
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -11,10 +10,18 @@ if (!supabaseUrl || !supabaseKey) {
   throw new Error("Supabase URL and Key must be defined in environment variables.");
 }
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+// Definitive fix for caching: Force all Supabase requests to bypass cache
+const supabase = createClient(supabaseUrl, supabaseKey, {
+  global: {
+    headers: {
+      'Cache-Control': 'no-store',
+    },
+  },
+});
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  res.setHeader('Cache-Control', 'no-cache'); 
+  // This header is still good practice for browser-side caching.
+  res.setHeader('Cache-Control', 'no-store'); 
 
   switch (req.method) {
     case 'GET':
@@ -26,7 +33,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (countError) throw countError;
 
         if (count === 0) {
-            // Now INITIAL_USERS is correctly defined.
             const { error: insertError } = await supabase
                 .from('users')
                 .insert(INITIAL_USERS);
