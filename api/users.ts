@@ -1,7 +1,8 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { User } from '../src/types';
-import { INITIAL_USERS } from '../src/constants';
+// Corrected import: Renamed 'USERS' to 'INITIAL_USERS' and added the '.js' extension.
+import { USERS as INITIAL_USERS } from '../src/constants.js';
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
@@ -25,6 +26,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (countError) throw countError;
 
         if (count === 0) {
+            // Now INITIAL_USERS is correctly defined.
             const { error: insertError } = await supabase
                 .from('users')
                 .insert(INITIAL_USERS);
@@ -41,8 +43,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .order('name', { ascending: true });
 
         if (fetchError) throw fetchError;
-
-        console.log('INVESTIGATION_LOG: Raw user data from Supabase:', JSON.stringify(users, null, 2));
         
         return res.status(200).json(users);
         
