@@ -19,9 +19,15 @@ const supabase = createClient(supabaseUrl, supabaseKey, {
   },
 });
 
+const setNoCacheHeaders = (res: VercelResponse) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // This header is still good practice for browser-side caching.
-  res.setHeader('Cache-Control', 'no-store'); 
+  setNoCacheHeaders(res);
 
   switch (req.method) {
     case 'GET':
