@@ -26,14 +26,13 @@ const App: React.FC = () => {
   
   const isInitialLoad = useRef(true);
 
-  const fetchData = useCallback(async (isPolling = false) => {
+  const fetchData = useCallback(async () => {
     if (isInitialLoad.current) {
       setIsLoading(true);
     }
-    if (!isPolling) {
-        setError(null);
-    }
+    setError(null);
     try {
+      // The vercel.json file now handles API cache-busting, but we keep this for local/other environments.
       const cacheBuster = `?t=${new Date().getTime()}`;
       const [usersResponse, journalsResponse] = await Promise.all([
         fetch(`/api/users${cacheBuster}`),
@@ -58,10 +57,8 @@ const App: React.FC = () => {
       }
 
     } catch (e: any) {
-        if (!isPolling) {
-            console.error("Gagal mengambil data dari API:", e);
-            setError("Gagal terhubung ke server. Silakan coba lagi nanti.");
-        }
+      console.error("Gagal mengambil data dari API:", e);
+      setError("Gagal terhubung ke server. Silakan coba lagi nanti.");
     } finally {
       if (isInitialLoad.current) {
         setIsLoading(false);
@@ -75,14 +72,18 @@ const App: React.FC = () => {
     fetchData();
   }, [fetchData]);
 
-  // Polling mechanism to force data refresh every 15 seconds
+  // Refetch data when the app becomes visible again
   useEffect(() => {
-    const pollInterval = setInterval(() => {
-        console.log('Polling for data...');
-        fetchData(true);
-    }, 15000); // fetch every 15 seconds
-
-    return () => clearInterval(pollInterval);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        console.log('App became visible, refetching data...');
+        fetchData();
+      }
+    };
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, [fetchData]);
   
   // Save settings to localStorage
@@ -237,7 +238,7 @@ const App: React.FC = () => {
   }
 
   if (error) {
-    return <ErrorScreen message={error} onRetry={() => fetchData(false)} />;
+    return <ErrorScreen message={error} onRetry={fetchData} />;
   }
 
   if (!currentUser) {
