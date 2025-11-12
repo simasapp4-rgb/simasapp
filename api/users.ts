@@ -1,10 +1,8 @@
-
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { User } from '../src/types';
 import { INITIAL_USERS } from '../src/constants';
 
-// Inisialisasi klien Supabase
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
 
@@ -12,33 +10,43 @@ if (!supabaseUrl || !supabaseKey) {
   throw new Error("Supabase URL and Key must be defined in environment variables.");
 }
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+// Force the Supabase client to not cache any fetch requests.
+// This is an aggressive measure to ensure data freshness on the server-side.
+const supabase = createClient(supabaseUrl, supabaseKey, {
+  global: {
+    fetch: (input, init) => {
+      // @ts-ignore
+      return fetch(input, { ...init, cache: 'no-store' });
+    }
+  }
+});
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Set headers to prevent caching on all responses from this endpoint
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '0');
+    // Set headers to prevent caching on all responses from this endpoint as a fallback
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
 
   switch (req.method) {
     case 'GET':
       try {
-        // Cek apakah tabel pengguna kosong
         const { count, error: countError } = await supabase
             .from('users')
             .select('*', { count: 'exact', head: true });
 
         if (countError) throw countError;
 
-        // Jika kosong, isi dengan data awal
         if (count === 0) {
             const { error: insertError } = await supabase
                 .from('users')
                 .insert(INITIAL_USERS);
-            if (insertError) throw insertError;
+            
+            if (insertError) {
+                console.error("Error seeding users table:", insertError);
+                throw insertError;
+            }
         }
         
-        // Ambil semua data pengguna
         const { data: users, error: fetchError } = await supabase
             .from('users')
             .select('*')
@@ -90,34 +98,43 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         
         res.status(200).json(data);
       } catch (error: any) {
-         res.status(400).json({ message: 'Bad request', error: error.message });
+         res.status(400).json({ message: 'Bad request: Invalid data format.', error: error.message });
       }
       break;
 
     case 'DELETE':
-      try {
-        // Handle reset data khusus
-        if (req.query.action === 'reset_application_data') {
-            await supabase.from('journals').delete().neq('id', '0'); // Hapus semua kecuali dummy
-            await supabase.from('users').delete().neq('id', '0');
-            await supabase.from('users').insert(INITIAL_USERS);
-            return res.status(200).json({ message: 'Application data has been reset.' });
-        }
+      // This is a special endpoint for resetting all data or deleting a single user
+      const { id, action } = req.query;
+      if (action === 'reset_application_data') {
+        try {
+          // We need elevated privileges for this, so we use the service_role key
+          const serviceKey = process.env.SUPABASE_SERVICE_KEY;
+          if (!serviceKey) throw new Error('Service key is not configured.');
+          const supabaseAdmin = createClient(supabaseUrl, serviceKey);
           
-        const { id } = req.query;
-        if (typeof id !== 'string') {
-          return res.status(400).json({ message: 'Bad request: Missing or invalid id.' });
+          await supabaseAdmin.from('journals').delete().neq('id', '0');
+          await supabaseAdmin.from('users').delete().neq('id', '0');
+          
+          return res.status(200).json({ message: 'All application data has been reset.' });
+        } catch(error: any) {
+          return res.status(500).json({ message: 'Error resetting data', error: error.message });
         }
+      } else {
+        try {
+          if (typeof id !== 'string') {
+            return res.status(400).json({ message: 'Bad request: Missing or invalid id.' });
+          }
 
-        const { error } = await supabase
-          .from('users')
-          .delete()
-          .eq('id', id);
+          const { error } = await supabase
+            .from('users')
+            .delete()
+            .eq('id', id);
 
-        if (error) throw error;
-        res.status(200).json({ message: 'User deleted successfully' });
-      } catch(error: any) {
-        res.status(500).json({ message: 'Error deleting user', error: error.message });
+          if (error) throw error;
+          res.status(200).json({ message: 'User deleted successfully' });
+        } catch(error: any) {
+          res.status(500).json({ message: 'Error deleting user', error: error.message });
+        }
       }
       break;
 
