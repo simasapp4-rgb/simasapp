@@ -1,9 +1,11 @@
 import React, { useState, useMemo } from 'react';
-import { User, UserRole, Student, Teacher, Parent, Admin } from '../types';
+import { User, UserRole } from '../types';
 
 interface LoginScreenProps {
-  onLogin: (userId: string) => void;
-  users: User[];
+  // onLogin now expects a full User object
+  onLogin: (user: User) => void;
+  // The users prop is no longer needed for the login logic
+  // users: User[]; 
 }
 
 const roleConfig = [
@@ -13,54 +15,50 @@ const roleConfig = [
   { role: UserRole.ADMIN, icon: 'fa-user-shield', label: 'Admin' },
 ];
 
-const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, users }) => {
+const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
   const [selectedRole, setSelectedRole] = useState<UserRole | null>(null);
   const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
 
   const loginIdentifierConfig = useMemo(() => {
     switch (selectedRole) {
-      case UserRole.STUDENT:
-        return { label: 'NISN', placeholder: 'Masukkan NISN', icon: 'fa-id-card', type: 'text' };
-      case UserRole.TEACHER:
-        return { label: 'NIP', placeholder: 'Masukkan NIP', icon: 'fa-id-card', type: 'text' };
-      case UserRole.PARENT:
-        return { label: 'NIK', placeholder: 'Masukkan NIK', icon: 'fa-id-card', type: 'text' };
-      case UserRole.ADMIN:
-        return { label: 'NIP', placeholder: 'Masukkan NIP Admin', icon: 'fa-id-card', type: 'text' };
-      default:
-        return { label: 'User ID', placeholder: 'Pilih peran terlebih dahulu', icon: 'fa-user', type: 'text' };
+      case UserRole.STUDENT: return { label: 'NISN', placeholder: 'Masukkan NISN', icon: 'fa-id-card', type: 'text' };
+      case UserRole.TEACHER: return { label: 'NIP', placeholder: 'Masukkan NIP', icon: 'fa-id-card', type: 'text' };
+      case UserRole.PARENT: return { label: 'NIK', placeholder: 'Masukkan NIK', icon: 'fa-id-card', type: 'text' };
+      case UserRole.ADMIN: return { label: 'NIP', placeholder: 'Masukkan NIP Admin', icon: 'fa-id-card', type: 'text' };
+      default: return { label: 'User ID', placeholder: 'Pilih peran terlebih dahulu', icon: 'fa-user', type: 'text' };
     }
   }, [selectedRole]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const trimmedIdentifier = identifier.trim().toLowerCase();
-    const trimmedPassword = password.trim();
+    setIsLoading(true);
+    try {
+      const response = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          role: selectedRole,
+          identifier: identifier.trim(),
+          password: password.trim(),
+        }),
+      });
 
-    let user: User | undefined;
-
-    switch (selectedRole) {
-      case UserRole.STUDENT:
-        user = users.find(u => u.role === UserRole.STUDENT && (u as Student).nisn.toLowerCase() === trimmedIdentifier);
-        break;
-      case UserRole.TEACHER:
-        user = users.find(u => u.role === UserRole.TEACHER && (u as Teacher).nip.toLowerCase() === trimmedIdentifier);
-        break;
-      case UserRole.PARENT:
-        user = users.find(u => u.role === UserRole.PARENT && (u as Parent).nik.toLowerCase() === trimmedIdentifier);
-        break;
-      case UserRole.ADMIN:
-         user = users.find(u => u.role === UserRole.ADMIN && (u as Admin).nip.toLowerCase() === trimmedIdentifier);
-        break;
-    }
-
-    // Case-insensitive password comparison
-    if (user && user.password.toLowerCase() === trimmedPassword.toLowerCase()) {
-      onLogin(user.id);
-    } else {
-      alert(`${loginIdentifierConfig.label} atau Sandi salah.`);
+      if (response.ok) {
+        const user: User = await response.json();
+        onLogin(user);
+      } else {
+        const errorData = await response.json();
+        console.error('Login failed:', errorData);
+        alert(`${loginIdentifierConfig.label} atau Sandi salah.`);
+      }
+    } catch (error) {
+      console.error('An error occurred during login:', error);
+      alert('Gagal terhubung ke server. Silakan coba lagi.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -76,18 +74,18 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, users }) => {
       style={{ backgroundImage: "url('https://i.imgur.com/hgMTKRD.jpeg')" }}
     >
       <div className="max-w-md w-full p-8">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-white mb-2">
-            {selectedRole 
-                ? <><i className="fas fa-book-open mr-2"></i>Jurnal Siswa</> 
-                : 'Pilih Peran Anda'}
-          </h1>
-          <p className="text-gray-200">
-            {selectedRole 
-                ? `Masuk sebagai ${selectedRole}` 
-                : 'Sistem Informasi Jurnal Siswa'}
-          </p>
-        </div>
+         <div className="text-center mb-8">
+           <h1 className="text-3xl font-bold text-white mb-2">
+             {selectedRole 
+                 ? <><i className="fas fa-book-open mr-2"></i>Jurnal Siswa</> 
+                 : 'Pilih Peran Anda'}
+           </h1>
+           <p className="text-gray-200">
+             {selectedRole 
+                 ? `Masuk sebagai ${selectedRole}` 
+                 : 'Sistem Informasi Jurnal Siswa'}
+           </p>
+         </div>
         
         {!selectedRole ? (
           <div className="grid grid-cols-2 gap-4 animate-fade-in">
@@ -161,10 +159,10 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, users }) => {
 
             <button
               type="submit"
-              disabled={!identifier || !password}
-              className="w-full mt-6 text-white bg-primary-600 hover:bg-primary-700 focus:ring-4 focus:outline-none focus:ring-primary-300 font-medium rounded-lg text-sm px-5 py-3 text-center transition-all duration-200 disabled:bg-slate-600 disabled:cursor-not-allowed"
+              disabled={isLoading || !identifier || !password}
+              className="w-full mt-6 text-white bg-primary-600 hover:bg-primary-700 focus:ring-4 focus:outline-none focus:ring-primary-300 font-medium rounded-lg text-sm px-5 py-3 text-center transition-all duration-200 disabled:bg-slate-600 disabled:cursor-not-allowed flex items-center justify-center"
             >
-              Masuk
+              {isLoading ? <><i className="fas fa-spinner fa-spin mr-2"></i>Memproses...</> : 'Masuk'}
             </button>
           </form>
         )}

@@ -32,7 +32,6 @@ const App: React.FC = () => {
     }
     setError(null);
     try {
-      // The vercel.json file now handles API cache-busting, but we keep this for local/other environments.
       const cacheBuster = `?t=${new Date().getTime()}`;
       const [usersResponse, journalsResponse] = await Promise.all([
         fetch(`/api/users${cacheBuster}`),
@@ -75,7 +74,7 @@ const App: React.FC = () => {
   // Refetch data when the app becomes visible again
   useEffect(() => {
     const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
+      if (document.visibilityState === 'visible' && !isInitialLoad.current) {
         console.log('App became visible, refetching data...');
         fetchData();
       }
@@ -118,11 +117,11 @@ const App: React.FC = () => {
     setTheme(prevTheme => prevTheme === 'light' ? 'dark' : 'light');
   };
 
-  const handleLogin = (userId: string) => {
-    const user = users.find(u => u.id === userId);
-    if (user) {
-      setCurrentUser(user);
-    }
+  // Updated handleLogin to accept the full user object
+  const handleLogin = (user: User) => {
+    setCurrentUser(user);
+    // After successful login, we should refetch all data to ensure it's up-to-date
+    fetchData();
   };
 
   const handleLogout = () => {
@@ -233,7 +232,7 @@ const App: React.FC = () => {
     }
   }, [currentUser, journalCategories, attendanceSettings, users, journalEntries, handleResetData, handleAddUser, handleUpdateUser, handleDeleteUser, handleAddJournal, handleUpdateJournal, handleDeleteJournal]);
 
-  if (isLoading) {
+  if (isLoading && isInitialLoad.current) {
     return <SplashScreen />;
   }
 
@@ -242,7 +241,8 @@ const App: React.FC = () => {
   }
 
   if (!currentUser) {
-    return <LoginScreen onLogin={handleLogin} users={users} />;
+    // Remove the `users` prop from LoginScreen as it's no longer needed
+    return <LoginScreen onLogin={handleLogin} />;
   }
 
   return (
