@@ -27,6 +27,7 @@ const App: React.FC = () => {
 
   useEffect(() => {
     const fetchData = async () => {
+      setIsLoading(true); // Pastikan loading state aktif saat mulai fetch
       try {
         const [usersResponse, journalsResponse] = await Promise.all([
           fetch('/api/users'),
@@ -53,7 +54,7 @@ const App: React.FC = () => {
         console.error("Gagal mengambil data dari API:", e);
         setError("Gagal terhubung ke server. Silakan coba lagi nanti.");
       } finally {
-        setTimeout(() => setIsLoading(false), 1500); // Shorter splash screen after fetch
+        setIsLoading(false); // Selesai loading HANYA setelah semua data diambil & di-set
       }
     };
     
@@ -83,6 +84,7 @@ const App: React.FC = () => {
           setCurrentUser(updatedUser);
         }
       } else {
+        // Jika pengguna saat ini tidak lagi ditemukan di daftar pengguna (misalnya, dihapus), maka logout.
         setCurrentUser(null);
       }
     }
