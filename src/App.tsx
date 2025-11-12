@@ -19,47 +19,48 @@ const App: React.FC = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
   
-  // Settings still use localStorage as there's no API for them yet.
   const [journalCategories, setJournalCategories] = useState<string[]>([]);
   const [attendanceSettings, setAttendanceSettings] = useState({ startTime: '07:00', endTime: '09:00' });
   const [schoolName, setSchoolName] = useState('SMP NEGERI 4 BALIKPAPAN');
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setIsLoading(true); // Pastikan loading state aktif saat mulai fetch
-      try {
-        const [usersResponse, journalsResponse] = await Promise.all([
-          fetch('/api/users'),
-          fetch('/api/journals')
-        ]);
+  const fetchData = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const cacheBuster = `?t=${new Date().getTime()}`;
+      const [usersResponse, journalsResponse] = await Promise.all([
+        fetch(`/api/users${cacheBuster}`),
+        fetch(`/api/journals${cacheBuster}`)
+      ]);
 
-        if (!usersResponse.ok || !journalsResponse.ok) {
-          throw new Error('Gagal mengambil data dari server. Pastikan API berjalan.');
-        }
-
-        const usersData = await usersResponse.json();
-        const journalsData = await journalsResponse.json();
-
-        setUsers(usersData);
-        setJournalEntries(journalsData);
-
-        // Load static settings from localStorage
-        setJournalCategories(loadState('journalCategories', INITIAL_JOURNAL_CATEGORIES));
-        setAttendanceSettings(loadState('attendanceSettings', { startTime: '07:00', endTime: '09:00' }));
-        setSchoolName(loadState('schoolName', 'SMP NEGERI 4 BALIKPAPAN'));
-        setTheme(loadState('theme', 'light'));
-
-      } catch (e: any) {
-        console.error("Gagal mengambil data dari API:", e);
-        setError("Gagal terhubung ke server. Silakan coba lagi nanti.");
-      } finally {
-        setIsLoading(false); // Selesai loading HANYA setelah semua data diambil & di-set
+      if (!usersResponse.ok || !journalsResponse.ok) {
+        throw new Error('Gagal mengambil data dari server. Pastikan API berjalan.');
       }
-    };
-    
-    fetchData();
+
+      const usersData = await usersResponse.json();
+      const journalsData = await journalsResponse.json();
+
+      setUsers(usersData);
+      setJournalEntries(journalsData);
+
+      // Load settings from localStorage after main data is loaded
+      setJournalCategories(loadState('journalCategories', INITIAL_JOURNAL_CATEGORIES));
+      setAttendanceSettings(loadState('attendanceSettings', { startTime: '07:00', endTime: '09:00' }));
+      setSchoolName(loadState('schoolName', 'SMP NEGERI 4 BALIKPAPAN'));
+      setTheme(loadState('theme', 'light'));
+
+    } catch (e: any) {
+      console.error("Gagal mengambil data dari API:", e);
+      setError("Gagal terhubung ke server. Silakan coba lagi nanti.");
+    } finally {
+      setIsLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
   
   // Save settings to localStorage
   useEffect(() => { if (!isLoading) saveState('journalCategories', journalCategories); }, [journalCategories, isLoading]);
@@ -84,7 +85,6 @@ const App: React.FC = () => {
           setCurrentUser(updatedUser);
         }
       } else {
-        // Jika pengguna saat ini tidak lagi ditemukan di daftar pengguna (misalnya, dihapus), maka logout.
         setCurrentUser(null);
       }
     }
@@ -164,8 +164,9 @@ const App: React.FC = () => {
   const handleResetData = useCallback(async () => {
     const response = await fetch('/api/users?action=reset_application_data', { method: 'DELETE' });
     if (!response.ok) throw new Error("Gagal mereset data aplikasi.");
-    // The reload is handled in AdminDashboard to show notification first
-  }, []);
+    // Force a full reload to get fresh data
+    fetchData();
+  }, [fetchData]);
 
   const DashboardComponent = useMemo(() => {
     if (!currentUser) return null;
@@ -211,14 +212,14 @@ const App: React.FC = () => {
       default:
         return <div>Invalid user role</div>;
     }
-  }, [currentUser, journalCategories, attendanceSettings, users, journalEntries, handleResetData]);
+  }, [currentUser, journalCategories, attendanceSettings, users, journalEntries, handleResetData, handleAddUser, handleUpdateUser, handleDeleteUser, handleAddJournal, handleUpdateJournal, handleDeleteJournal]);
 
   if (isLoading) {
     return <SplashScreen />;
   }
 
   if (error) {
-    return <ErrorScreen message={error} onRetry={() => window.location.reload()} />;
+    return <ErrorScreen message={error} onRetry={fetchData} />;
   }
 
   if (!currentUser) {
