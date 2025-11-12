@@ -1,31 +1,35 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createClient } from '@supabase/supabase-js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { User } from '../src/types';
 import { INITIAL_USERS } from '../src/constants';
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseKey) {
-  throw new Error("Supabase URL and Key must be defined in environment variables.");
-}
-
-// Force the Supabase client to not cache any fetch requests.
-// This is an aggressive measure to ensure data freshness on the server-side.
-const supabase = createClient(supabaseUrl, supabaseKey, {
-  global: {
-    fetch: (input, init) => {
-      // @ts-ignore
-      return fetch(input, { ...init, cache: 'no-store' });
-    }
+// Helper function to create a new, non-caching Supabase client for each request.
+const getSupabaseClient = (): SupabaseClient => {
+  if (!supabaseUrl || !supabaseKey) {
+    throw new Error("Supabase URL and Key must be defined in environment variables.");
   }
-});
+  // Force the Supabase client to not cache any fetch requests.
+  // This guarantees that every API call fetches fresh data from the database.
+  return createClient(supabaseUrl, supabaseKey, {
+    global: {
+      fetch: (input, init) => {
+        // @ts-ignore
+        return fetch(input, { ...init, cache: 'no-store' });
+      }
+    }
+  });
+};
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-    // Set headers to prevent caching on all responses from this endpoint as a fallback
+    // Set headers to prevent caching on the browser and CDN level
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
+
+  const supabase = getSupabaseClient();
 
   switch (req.method) {
     case 'GET':
@@ -103,11 +107,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       break;
 
     case 'DELETE':
-      // This is a special endpoint for resetting all data or deleting a single user
       const { id, action } = req.query;
       if (action === 'reset_application_data') {
         try {
-          // We need elevated privileges for this, so we use the service_role key
           const serviceKey = process.env.SUPABASE_SERVICE_KEY;
           if (!serviceKey) throw new Error('Service key is not configured.');
           const supabaseAdmin = createClient(supabaseUrl, serviceKey);
