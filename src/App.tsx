@@ -24,15 +24,15 @@ const App: React.FC = () => {
   const [schoolName, setSchoolName] = useState('SMP NEGERI 4 BALIKPAPAN');
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   
-  // Use a ref to track if it's the initial load, preventing stale closures in useCallback
   const isInitialLoad = useRef(true);
 
-  const fetchData = useCallback(async () => {
-    // Only show the full splash screen on the very first load.
+  const fetchData = useCallback(async (isPolling = false) => {
     if (isInitialLoad.current) {
       setIsLoading(true);
     }
-    setError(null);
+    if (!isPolling) {
+        setError(null);
+    }
     try {
       const cacheBuster = `?t=${new Date().getTime()}`;
       const [usersResponse, journalsResponse] = await Promise.all([
@@ -50,7 +50,6 @@ const App: React.FC = () => {
       setUsers(usersData);
       setJournalEntries(journalsData);
 
-      // Load settings from localStorage after main data is loaded
       if (isInitialLoad.current) {
         setJournalCategories(loadState('journalCategories', INITIAL_JOURNAL_CATEGORIES));
         setAttendanceSettings(loadState('attendanceSettings', { startTime: '07:00', endTime: '09:00' }));
@@ -59,34 +58,31 @@ const App: React.FC = () => {
       }
 
     } catch (e: any) {
-      console.error("Gagal mengambil data dari API:", e);
-      setError("Gagal terhubung ke server. Silakan coba lagi nanti.");
+        if (!isPolling) {
+            console.error("Gagal mengambil data dari API:", e);
+            setError("Gagal terhubung ke server. Silakan coba lagi nanti.");
+        }
     } finally {
-      // Ensure loading is set to false after the first load is complete
       if (isInitialLoad.current) {
         setIsLoading(false);
         isInitialLoad.current = false;
       }
     }
-  }, []); // Empty dependency array makes this function stable
+  }, []);
 
   // Initial data fetch
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  // Add event listener to refetch data when app becomes visible again
+  // Polling mechanism to force data refresh every 15 seconds
   useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible') {
-        console.log("App became visible, refetching data...");
-        fetchData();
-      }
-    };
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
+    const pollInterval = setInterval(() => {
+        console.log('Polling for data...');
+        fetchData(true);
+    }, 15000); // fetch every 15 seconds
+
+    return () => clearInterval(pollInterval);
   }, [fetchData]);
   
   // Save settings to localStorage
@@ -241,7 +237,7 @@ const App: React.FC = () => {
   }
 
   if (error) {
-    return <ErrorScreen message={error} onRetry={fetchData} />;
+    return <ErrorScreen message={error} onRetry={() => fetchData(false)} />;
   }
 
   if (!currentUser) {
