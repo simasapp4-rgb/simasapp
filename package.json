@@ -1,6 +1,7 @@
 {
   "name": "jurnal-siswa",
   "version": "1.0.0",
+  "type": "module",
   "private": true,
   "description": "A comprehensive student journaling application.",
   "scripts": {
