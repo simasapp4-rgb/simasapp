@@ -1,34 +1,18 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { createClient } from '@supabase/supabase-js';
 import { JournalEntry } from '../src/types';
 
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
 
-// Helper function to create a new, non-caching Supabase client for each request.
-const getSupabaseClient = (): SupabaseClient => {
-  if (!supabaseUrl || !supabaseKey) {
-    throw new Error("Supabase URL and Key must be defined in environment variables.");
-  }
-  // Force the Supabase client to not cache any fetch requests.
-  // This guarantees that every API call fetches fresh data from the database.
-  return createClient(supabaseUrl, supabaseKey, {
-    global: {
-      fetch: (input, init) => {
-        // @ts-ignore
-        return fetch(input, { ...init, cache: 'no-store' });
-      }
-    }
-  });
-};
+if (!supabaseUrl || !supabaseKey) {
+  throw new Error("Supabase URL and Key must be defined in environment variables.");
+}
+
+const supabase = createClient(supabaseUrl, supabaseKey);
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-    // Set headers to prevent caching on the browser and CDN level
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    res.setHeader('Pragma', 'no-cache');
-    res.setHeader('Expires', '0');
-
-  const supabase = getSupabaseClient();
+  res.setHeader('Cache-Control', 'no-cache');
 
   switch (req.method) {
     case 'GET':
