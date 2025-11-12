@@ -56,7 +56,8 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin, users }) => {
         break;
     }
 
-    if (user && user.password === trimmedPassword) {
+    // Case-insensitive password comparison
+    if (user && user.password.toLowerCase() === trimmedPassword.toLowerCase()) {
       onLogin(user.id);
     } else {
       alert(`${loginIdentifierConfig.label} atau Sandi salah.`);
