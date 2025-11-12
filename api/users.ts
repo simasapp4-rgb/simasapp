@@ -11,8 +11,6 @@ const getSupabaseClient = (): SupabaseClient => {
   if (!supabaseUrl || !supabaseKey) {
     throw new Error("Supabase URL and Key must be defined in environment variables.");
   }
-  // Force the Supabase client to not cache any fetch requests.
-  // This guarantees that every API call fetches fresh data from the database.
   return createClient(supabaseUrl, supabaseKey, {
     global: {
       fetch: (input, init) => {
@@ -24,7 +22,6 @@ const getSupabaseClient = (): SupabaseClient => {
 };
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-    // Set headers to prevent caching on the browser and CDN level
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
     res.setHeader('Pragma', 'no-cache');
     res.setHeader('Expires', '0');
@@ -34,6 +31,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   switch (req.method) {
     case 'GET':
       try {
+        // Check if the table is empty, and seed if it is.
         const { count, error: countError } = await supabase
             .from('users')
             .select('*', { count: 'exact', head: true });
@@ -41,26 +39,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         if (countError) throw countError;
 
         if (count === 0) {
-            const { error: insertError } = await supabase
-                .from('users')
-                .insert(INITIAL_USERS);
-            
-            if (insertError) {
-                console.error("Error seeding users table:", insertError);
-                throw insertError;
-            }
+            const { error: insertError } = await supabase.from('users').insert(INITIAL_USERS);
+            if (insertError) throw insertError;
         }
         
+        // Fetch the users.
         const { data: users, error: fetchError } = await supabase
             .from('users')
             .select('*')
             .order('name', { ascending: true });
 
         if (fetchError) throw fetchError;
+
+        // *** LOGGING FOR DEBUGGING ***
+        // Log the raw data received from Supabase to Vercel logs.
+        console.log('INVESTIGATION_LOG: Raw user data from Supabase:', JSON.stringify(users, null, 2));
+        // ***************************
         
         return res.status(200).json(users);
         
       } catch (error: any) {
+        console.error('Error in GET /api/users:', error);
         res.status(500).json({ message: 'Error fetching users', error: error.message });
       }
       break;
@@ -68,12 +67,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     case 'POST':
       try {
         const newUser: User = req.body;
-        const { data, error } = await supabase
-          .from('users')
-          .insert(newUser)
-          .select()
-          .single();
-
+        const { data, error } = await supabase.from('users').insert(newUser).select().single();
         if (error) throw error;
         res.status(201).json(data);
       } catch (error: any) {
@@ -85,18 +79,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       try {
         const updatedUser: User = req.body;
         const { id, ...updateData } = updatedUser;
+        if (!id) return res.status(400).json({ message: 'Bad request: Missing user ID.' });
 
-        if (!id) {
-          return res.status(400).json({ message: 'Bad request: Missing user ID.' });
-        }
-
-        const { data, error } = await supabase
-          .from('users')
-          .update(updateData)
-          .eq('id', id)
-          .select()
-          .single();
-
+        const { data, error } = await supabase.from('users').update(updateData).eq('id', id).select().single();
         if (error) throw error;
         if (!data) return res.status(404).json({ message: 'User not found' });
         
@@ -123,15 +108,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         }
       } else {
         try {
-          if (typeof id !== 'string') {
-            return res.status(400).json({ message: 'Bad request: Missing or invalid id.' });
-          }
-
-          const { error } = await supabase
-            .from('users')
-            .delete()
-            .eq('id', id);
-
+          if (typeof id !== 'string') return res.status(400).json({ message: 'Bad request: Missing or invalid id.' });
+          const { error } = await supabase.from('users').delete().eq('id', id);
           if (error) throw error;
           res.status(200).json({ message: 'User deleted successfully' });
         } catch(error: any) {
