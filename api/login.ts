@@ -2,10 +2,17 @@
 import { createClient } from '@supabase/supabase-js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
-// STANDARDIZE: Use the same environment variable names as all other API routes
 const supabaseUrl = process.env.SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_ANON_KEY!; // CORRECTED: Was SUPABASE_KEY
-const supabase = createClient(supabaseUrl, supabaseKey);
+const supabaseKey = process.env.SUPABASE_ANON_KEY!;
+
+// DEFINITIVE CACHE FIX: Apply no-store cache policy directly to the Supabase client
+const supabase = createClient(supabaseUrl, supabaseKey, {
+  global: {
+    headers: {
+      'Cache-Control': 'no-store',
+    },
+  },
+});
 
 export default async function handler(
   request: VercelRequest,

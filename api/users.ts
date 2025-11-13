@@ -7,13 +7,20 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
-  // This check is crucial. If the function crashes, it's because these env vars are missing.
   throw new Error("Supabase URL and Key must be defined in environment variables.");
 }
 
-const supabase = createClient(supabaseUrl, supabaseKey);
+// DEFINITIVE CACHE FIX: Apply no-store cache policy directly to the Supabase client
+const supabase = createClient(supabaseUrl, supabaseKey, {
+  global: {
+    headers: {
+      'Cache-Control': 'no-store',
+    },
+  },
+});
 
 const setNoCacheHeaders = (res: VercelResponse) => {
+  // Also set headers on the Vercel response for good measure
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
