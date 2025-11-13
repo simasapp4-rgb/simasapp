@@ -2,8 +2,9 @@
 import { createClient } from '@supabase/supabase-js';
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
+// STANDARDIZE: Use the same environment variable names as all other API routes
 const supabaseUrl = process.env.SUPABASE_URL!;
-const supabaseKey = process.env.SUPABASE_KEY!;
+const supabaseKey = process.env.SUPABASE_ANON_KEY!; // CORRECTED: Was SUPABASE_KEY
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 export default async function handler(
@@ -30,8 +31,6 @@ export default async function handler(
   }
 
   try {
-    // Note: Supabase queries are case-sensitive by default.
-    // We fetch the user by their identifier first.
     const { data: users, error: fetchError } = await supabase
       .from('users')
       .select('*')
@@ -41,21 +40,17 @@ export default async function handler(
 
     if (fetchError) {
       console.error('Supabase fetch error:', fetchError);
-      return response.status(500).json({ error: 'Database query failed' });
+      return response.status(500).json({ error: 'Database query failed', details: fetchError.message });
     }
 
     if (users && users.length > 0) {
         const user = users[0];
-        // Now, we perform a case-insensitive password comparison in code.
         if (user.password.toLowerCase() === password.toLowerCase()) {
-            // On successful login, return the full user object
             return response.status(200).json(user);
         } else {
-            // Password mismatch
             return response.status(401).json({ error: 'Invalid identifier or password' });
         }
     } else {
-        // User not found
         return response.status(401).json({ error: 'Invalid identifier or password' });
     }
 

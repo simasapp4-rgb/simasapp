@@ -7,6 +7,7 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseKey) {
+  // This check is crucial. If the function crashes, it's because these env vars are missing.
   throw new Error("Supabase URL and Key must be defined in environment variables.");
 }
 
@@ -25,8 +26,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   switch (req.method) {
     case 'GET':
       try {
-        // AMANKAN: Hapus logika seeding otomatis yang berbahaya.
-        // Database adalah satu-satunya sumber kebenaran.
         const { data: users, error: fetchError } = await supabase
             .from('users')
             .select('*')
@@ -34,8 +33,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         if (fetchError) throw fetchError;
         
-        // Jika tidak ada pengguna sama sekali (misalnya, database baru), kembalikan array kosong.
-        // Pengguna admin pertama harus dibuat secara manual di Supabase.
         return res.status(200).json(users ?? []);
         
       } catch (error: any) {
@@ -90,15 +87,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (action === 'reset_application_data') {
         try {
           const serviceKey = process.env.SUPABASE_SERVICE_KEY;
-          if (!serviceKey) throw new Error('Service key is not configured.');
+          if (!serviceKey) throw new Error('Service key is not configured for reset.');
           const supabaseAdmin = createClient(supabaseUrl, serviceKey);
           
           await supabaseAdmin.from('journals').delete().neq('id', '0');
           await supabaseAdmin.from('users').delete().neq('id', '0');
           
-          // AMANKAN: Setelah reset, kita HARUS memasukkan kembali data awal secara eksplisit.
           await supabaseAdmin.from('users').insert(INITIAL_USERS);
-          // (Kita juga perlu menambahkan ini untuk jurnal nanti)
 
           return res.status(200).json({ message: 'All application data has been reset.' });
         } catch(error: any) {
