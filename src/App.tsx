@@ -1,255 +1,224 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
-import { User, UserRole, JournalEntry } from './types';
-import { INITIAL_JOURNAL_CATEGORIES } from './constants';
-import { loadState, saveState } from './utils/storage';
+import React, { useState, useEffect } from 'react';
+import useSWR, { SWRConfig, KeyedMutator } from 'swr';
+import { User, JournalEntry, LoginData, StoredUser, UserRole } from './types';
+import { getStoredUser, setStoredUser, clearStoredUser } from './utils/storage';
 import LoginScreen from './components/LoginScreen';
-import StudentDashboard from './components/dashboards/StudentDashboard';
-import TeacherDashboard from './components/dashboards/TeacherDashboard';
-import ParentDashboard from './components/dashboards/ParentDashboard';
-import AdminDashboard from './components/dashboards/AdminDashboard';
-import Layout from './components/Layout';
 import SplashScreen from './components/SplashScreen';
+import Layout from './components/Layout';
 import ErrorScreen from './components/ErrorScreen';
 
+const API_BASE_URL = '/api';
+
+// Universal fetcher function for SWR
+const fetcher = async (url: string) => {
+  const res = await fetch(url);
+  if (!res.ok) {
+    const errorInfo = await res.json();
+    console.error("API Fetch Error:", errorInfo);
+    throw new Error(errorInfo.message || 'An error occurred while fetching the data.');
+  }
+  return res.json();
+};
+
 const App: React.FC = () => {
+  const [user, setUser] = useState<StoredUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [loginError, setLoginError] = useState<string | null>(null);
 
-  const [users, setUsers] = useState<User[]>([]);
-  const [journalEntries, setJournalEntries] = useState<JournalEntry[]>([]);
-  
-  const [journalCategories, setJournalCategories] = useState<string[]>([]);
-  const [attendanceSettings, setAttendanceSettings] = useState({ startTime: '07:00', endTime: '09:00' });
-  const [schoolName, setSchoolName] = useState('SMP NEGERI 4 BALIKPAPAN');
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
-  
-  const isInitialLoad = useRef(true);
+  // --- SWR Data Fetching ---
+  const { data: users, error: usersError, mutate: mutateUsers } = useSWR<User[]>(user ? `${API_BASE_URL}/users` : null, fetcher);
+  const { data: journals, error: journalsError, mutate: mutateJournals } = useSWR<JournalEntry[]>(user ? `${API_BASE_URL}/journals` : null, fetcher);
 
-  const fetchData = useCallback(async () => {
-    if (isInitialLoad.current) {
-      setIsLoading(true);
+  // Check for stored user on initial load
+  useEffect(() => {
+    const storedUser = getStoredUser();
+    if (storedUser) {
+      setUser(storedUser);
     }
-    setError(null);
-    try {
-      const cacheBuster = `?t=${new Date().getTime()}`;
-      const [usersResponse, journalsResponse] = await Promise.all([
-        fetch(`/api/users${cacheBuster}`),
-        fetch(`/api/journals${cacheBuster}`)
-      ]);
-
-      if (!usersResponse.ok || !journalsResponse.ok) {
-        throw new Error('Gagal mengambil data dari server. Pastikan API berjalan.');
-      }
-
-      const usersData = await usersResponse.json();
-      const journalsData = await journalsResponse.json();
-
-      setUsers(usersData);
-      setJournalEntries(journalsData);
-
-      if (isInitialLoad.current) {
-        setJournalCategories(loadState('journalCategories', INITIAL_JOURNAL_CATEGORIES));
-        setAttendanceSettings(loadState('attendanceSettings', { startTime: '07:00', endTime: '09:00' }));
-        setSchoolName(loadState('schoolName', 'SMP NEGERI 4 BALIKPAPAN'));
-        setTheme(loadState('theme', 'light'));
-      }
-
-    } catch (e: any) {
-      console.error("Gagal mengambil data dari API:", e);
-      setError("Gagal terhubung ke server. Silakan coba lagi nanti.");
-    } finally {
-      if (isInitialLoad.current) {
-        setIsLoading(false);
-        isInitialLoad.current = false;
-      }
-    }
+    setTimeout(() => setIsLoading(false), 1200); // Simulate splash screen
   }, []);
 
-  // Initial data fetch
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
+  // --- Authentication Handlers ---
+  const handleLogin = async (loginData: LoginData) => {
+    setIsLoading(true);
+    setLoginError(null);
+    try {
+      const response = await fetch(`${API_BASE_URL}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(loginData),
+      });
 
-  // Refetch data when the app becomes visible again
-  useEffect(() => {
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && !isInitialLoad.current) {
-        console.log('App became visible, refetching data...');
-        fetchData();
+      const loggedInUser = await response.json();
+
+      if (!response.ok) {
+        throw new Error(loggedInUser.error || 'Login failed');
       }
-    };
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => {
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-    };
-  }, [fetchData]);
-  
-  // Save settings to localStorage
-  useEffect(() => { if (!isInitialLoad.current) saveState('journalCategories', journalCategories); }, [journalCategories]);
-  useEffect(() => { if (!isInitialLoad.current) saveState('attendanceSettings', attendanceSettings); }, [attendanceSettings]);
-  useEffect(() => { if (!isInitialLoad.current) saveState('schoolName', schoolName); }, [schoolName]);
-  useEffect(() => { if (!isInitialLoad.current) saveState('theme', theme); }, [theme]);
 
+      const storedUser: StoredUser = { id: loggedInUser.id, name: loggedInUser.name, role: loggedInUser.role, avatar: loggedInUser.avatar };
+      setStoredUser(storedUser);
+      setUser(storedUser);
 
-  useEffect(() => {
-    if (theme === 'dark') {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
+    } catch (error: any) {
+      console.error(error);
+      setLoginError(error.message || 'An unknown error occurred.');
+    } finally {
+      setIsLoading(false);
     }
-  }, [theme]);
-
-  useEffect(() => {
-    if (currentUser) {
-      const updatedUser = users.find(u => u.id === currentUser.id);
-      if (updatedUser) {
-        if (JSON.stringify(currentUser) !== JSON.stringify(updatedUser)) {
-          setCurrentUser(updatedUser);
-        }
-      } else {
-        setCurrentUser(null);
-      }
-    }
-  }, [users, currentUser]);
-
-  const toggleTheme = () => {
-    setTheme(prevTheme => prevTheme === 'light' ? 'dark' : 'light');
-  };
-
-  // Updated handleLogin to accept the full user object
-  const handleLogin = (user: User) => {
-    setCurrentUser(user);
-    // After successful login, we should refetch all data to ensure it's up-to-date
-    fetchData();
   };
 
   const handleLogout = () => {
-    setCurrentUser(null);
+    clearStoredUser();
+    setUser(null);
   };
 
-  const handleAddJournal = async (newJournalData: Partial<JournalEntry>) => {
-    const response = await fetch('/api/journals', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newJournalData),
-    });
-    if (!response.ok) throw new Error("Gagal menambahkan jurnal.");
-    await fetchData(); 
-  };
-
-  const handleUpdateJournal = async (updatedJournal: JournalEntry) => {
-    const response = await fetch('/api/journals', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updatedJournal),
-    });
-    if (!response.ok) throw new Error("Gagal memperbarui jurnal.");
-    await fetchData();
-  };
-
-  const handleDeleteJournal = async (journalId: string) => {
-    const response = await fetch(`/api/journals?id=${journalId}`, { method: 'DELETE' });
-    if (!response.ok) throw new Error("Gagal menghapus jurnal.");
-    await fetchData();
-  };
-
+  // --- Data Mutation Handlers ---
   const handleAddUser = async (newUser: User) => {
-    const response = await fetch('/api/users', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(newUser),
-    });
-    if (!response.ok) throw new Error("Gagal menambahkan pengguna.");
-    await fetchData();
+    try {
+      await fetch(`${API_BASE_URL}/users`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newUser),
+      });
+      mutateUsers(); 
+    } catch (error) {
+      console.error('Failed to add user:', error);
+      mutateUsers();
+      throw error;
+    }
   };
 
   const handleUpdateUser = async (updatedUser: User) => {
-    const response = await fetch('/api/users', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updatedUser),
-    });
-    if (!response.ok) throw new Error("Gagal memperbarui pengguna.");
-    await fetchData();
+    try {
+      await fetch(`${API_BASE_URL}/users`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedUser),
+      });
+      mutateUsers();
+    } catch (error) {
+      console.error('Failed to update user:', error);
+      mutateUsers();
+      throw error;
+    }
   };
 
   const handleDeleteUser = async (userId: string) => {
-     const response = await fetch(`/api/users?id=${userId}`, { method: 'DELETE' });
-    if (!response.ok) throw new Error("Gagal menghapus pengguna.");
-    await fetchData();
+    try {
+      await fetch(`${API_BASE_URL}/users?id=${userId}`, {
+        method: 'DELETE',
+      });
+      mutateUsers();
+    } catch (error) {
+      console.error('Failed to delete user:', error);
+      mutateUsers();
+      throw error;
+    }
   };
   
-  const handleResetData = useCallback(async () => {
-    const response = await fetch('/api/users?action=reset_application_data', { method: 'DELETE' });
-    if (!response.ok) throw new Error("Gagal mereset data aplikasi.");
-    await fetchData();
-  }, [fetchData]);
-
-  const DashboardComponent = useMemo(() => {
-    if (!currentUser) return null;
-
-    switch (currentUser.role) {
-      case UserRole.STUDENT:
-        return <StudentDashboard 
-                  user={currentUser}
-                  journalCategories={journalCategories}
-                  attendanceSettings={attendanceSettings}
-                  journals={journalEntries}
-                  onAddJournal={handleAddJournal}
-                  onUpdateJournal={handleUpdateJournal}
-                  onDeleteJournal={handleDeleteJournal}
-                />;
-      case UserRole.TEACHER:
-        return <TeacherDashboard 
-                  user={currentUser} 
-                  journals={journalEntries}
-                  onUpdateJournal={handleUpdateJournal}
-                  users={users}
-                />;
-      case UserRole.PARENT:
-        return <ParentDashboard 
-                  user={currentUser} 
-                  journals={journalEntries}
-                  users={users}
-                />;
-      case UserRole.ADMIN:
-        return <AdminDashboard 
-                  user={currentUser}
-                  users={users}
-                  onAddUser={handleAddUser}
-                  onUpdateUser={handleUpdateUser}
-                  onDeleteUser={handleDeleteUser}
-                  journalCategories={journalCategories}
-                  onJournalCategoriesChange={setJournalCategories}
-                  attendanceSettings={attendanceSettings}
-                  onAttendanceSettingsChange={setAttendanceSettings}
-                  journals={journalEntries}
-                  onResetData={handleResetData}
-                />;
-      default:
-        return <div>Invalid user role</div>;
+  const handleAddJournal = async (newJournal: Partial<JournalEntry>) => {
+    try {
+        await fetch(`${API_BASE_URL}/journals`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newJournal),
+        });
+        mutateJournals();
+    } catch (error) {
+        console.error('Failed to add journal:', error);
+        throw error;
     }
-  }, [currentUser, journalCategories, attendanceSettings, users, journalEntries, handleResetData, handleAddUser, handleUpdateUser, handleDeleteUser, handleAddJournal, handleUpdateJournal, handleDeleteJournal]);
+  };
 
-  if (isLoading && isInitialLoad.current) {
+  const handleUpdateJournal = async (updatedJournal: JournalEntry) => {
+    try {
+        await fetch(`${API_BASE_URL}/journals`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updatedJournal),
+        });
+        mutateJournals();
+    } catch (error) {
+        console.error('Failed to update journal:', error);
+        throw error;
+    }
+  };
+
+  const handleDeleteJournal = async (journalId: string) => {
+     try {
+        await fetch(`${API_BASE_URL}/journals?id=${journalId}`, { method: 'DELETE' });
+        mutateJournals();
+    } catch (error) {
+        console.error('Failed to delete journal:', error);
+        throw error;
+    }
+  };
+
+  const handleResetData = async () => {
+    try {
+      await fetch(`${API_BASE_URL}/users?action=reset_application_data`, { method: 'DELETE' });
+      mutateUsers();
+      mutateJournals();
+    } catch(error) {
+       console.error('Failed to reset data:', error);
+       throw error;
+    }
+  }
+
+  if (isLoading) {
     return <SplashScreen />;
   }
 
-  if (error) {
-    return <ErrorScreen message={error} onRetry={fetchData} />;
+  if (!user) {
+    return <LoginScreen onLogin={handleLogin} error={loginError} />;
   }
 
-  if (!currentUser) {
-    // Remove the `users` prop from LoginScreen as it's no longer needed
-    return <LoginScreen onLogin={handleLogin} />;
+  if (usersError || journalsError) {
+    return <ErrorScreen error={usersError || journalsError} onRetry={() => { 
+      if (usersError) mutateUsers();
+      if (journalsError) mutateJournals();
+    }} />;
+  }
+
+  if (!users || !journals) {
+    return <SplashScreen message="Menyinkronkan data..." />;
   }
 
   return (
-    <Layout user={currentUser} onLogout={handleLogout} toggleTheme={toggleTheme} theme={theme}>
-      {DashboardComponent}
-    </Layout>
+    <Layout
+      user={user}
+      users={users}
+      journals={journals}
+      onLogout={handleLogout}
+      onAddUser={handleAddUser}
+      onUpdateUser={handleUpdateUser}
+      onDeleteUser={handleDeleteUser}
+      onAddJournal={handleAddJournal}
+      onUpdateJournal={handleUpdateJournal}
+      onDeleteJournal={handleDeleteJournal}
+      onResetData={handleResetData}
+    />
   );
 };
 
-export default App;
+// Main App entry point with SWR Configuration
+const AppWithSWR: React.FC = () => (
+  <SWRConfig 
+    value={{
+      fetcher,
+      // --- DEFINITIVE CACHE-BUSTING CONFIG ---
+      // 1. Force revalidation on focus/reconnect.
+      revalidateOnFocus: true,
+      revalidateOnReconnect: true,
+      // 2. Disable request deduplication. This forces SWR to always re-fetch.
+      dedupingInterval: 0,
+      // 3. Force the app to poll for new data every 3 seconds.
+      // This is the most aggressive way to ensure data is always fresh.
+      refreshInterval: 3000, 
+    }}
+  >
+    <App />
+  </SWRConfig>
+);
+
+export default AppWithSWR;
