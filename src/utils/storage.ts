@@ -1,26 +1,44 @@
-// This file is no longer needed as primary data is handled by the Supabase backend.
-// Keeping it for settings that are not yet migrated to a server-side table.
+import { StoredUser } from '../types';
 
-export function loadState<T>(key: string, defaultValue: T): T {
+const USER_STORAGE_KEY = 'simas_user';
+
+/**
+ * Retrieves the stored user data from localStorage.
+ * @returns The stored user object or null if not found.
+ */
+export function getStoredUser(): StoredUser | null {
   try {
-    const serializedState = localStorage.getItem(key);
-    if (serializedState === null) {
-      // Simpan nilai default untuk penggunaan selanjutnya
-      saveState(key, defaultValue);
-      return defaultValue;
+    const serializedUser = localStorage.getItem(USER_STORAGE_KEY);
+    if (serializedUser === null) {
+      return null;
     }
-    return JSON.parse(serializedState);
+    return JSON.parse(serializedUser);
   } catch (err) {
-    console.error("Could not load state from localStorage for key:", key, err);
-    return defaultValue;
+    console.error("Could not load user from localStorage:", err);
+    return null;
   }
 }
 
-export function saveState<T>(key: string, value: T): void {
+/**
+ * Saves the user data to localStorage.
+ * @param user The user object to save.
+ */
+export function setStoredUser(user: StoredUser): void {
   try {
-    const serializedState = JSON.stringify(value);
-    localStorage.setItem(key, serializedState);
+    const serializedUser = JSON.stringify(user);
+    localStorage.setItem(USER_STORAGE_KEY, serializedUser);
   } catch (err) {
-    console.error("Could not save state to localStorage for key:", key, err);
+    console.error("Could not save user to localStorage:", err);
+  }
+}
+
+/**
+ * Removes the user data from localStorage.
+ */
+export function clearStoredUser(): void {
+  try {
+    localStorage.removeItem(USER_STORAGE_KEY);
+  } catch (err) {
+    console.error("Could not clear user from localStorage:", err);
   }
 }
